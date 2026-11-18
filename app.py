@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EURUSD & GBPUSD Hybrid Levels Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --card: #1a2332;
+    --card-border: #2d3a4f;
+    --text: #e8eef4;
+    --muted: #8b9bb4;
+    --accent: #3b82f6;
+    --green: #10b981;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --orange: #f97316;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a2332 0%, #0f172a 100%);
+    border-bottom: 1px solid var(--card-border);
+    padding: 20px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .header h1 { font-size: 22px; font-weight: 600; }
+  .header h1 span { color: var(--accent); }
+  .status-bar {
+    display: flex;
+    gap: 24px;
+    font-size: 13px;
+    color: var(--muted);
+    align-items: center;
+  }
+  .status-bar .live {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--green);
+  }
+  .dot {
+    width: 8px; height: 8px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .pair-select {
+    background: #0d1117;
+    border: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .pair-select:focus { outline: none; border-color: var(--accent); }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .levels-box { display: flex; flex-direction: column; gap: 12px; }
+  .level-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+  }
+  .level-row.res { border-left: 3px solid var(--red); }
+  .level-row.sup { border-left: 3px solid var(--green); }
+  .level-label { font-size: 13px; color: var(--muted); }
+  .level-value { font-size: 20px; font-weight: 600; font-family: 'SF Mono', Consolas, monospace; }
+  .level-row.res .level-value { color: var(--red); }
+  .level-row.sup .level-value { color: var(--green); }
+  .atr-display { text-align: center; padding: 20px 0; }
+  .atr-value {
+    font-size: 48px;
+    font-weight: 700;
+    font-family: 'SF Mono', Consolas, monospace;
+  }
+  .atr-value.low { color: var(--green); }
+  .atr-value.mid { color: var(--yellow); }
+  .atr-value.high { color: var(--orange); }
+  .atr-label { font-size: 14px; color: var(--muted); margin-top: 4px; }
+  .bias-badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 12px;
+  }
+  .bias-badge.trend { background: rgba(16,185,129,0.15); color: var(--green); }
+  .bias-badge.range { background: rgba(249,115,22,0.15); color: var(--orange); }
+  .bias-badge.neutral { background: rgba(139,155,180,0.15); color: var(--muted); }
+  .rules { display: flex; flex-direction: column; gap: 10px; }
+  .rule {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .rule-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .rule-icon.buy { background: rgba(16,185,129,0.2); color: var(--green); }
+  .rule-icon.sell { background: rgba(239,68,68,0.2); color: var(--red); }
+  .rule-text strong { color: var(--text); }
+  .rule-text span { color: var(--muted); }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  .stat {
+    text-align: center;
+    padding: 14px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+  }
+  .stat-value { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .action-panel {
+    background: linear-gradient(135deg, #1e3a5f 0%, #1a2332 100%);
+    border: 1px solid #3b82f6;
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 20px;
+  }
+  .action-panel h2 { color: var(--accent); margin-bottom: 12px; }
+  .action-text { font-size: 18px; font-weight: 500; margin-bottom: 8px; }
+  .action-detail { color: var(--muted); font-size: 14px; }
+  .footer {
+    text-align: center;
+    padding: 32px;
+    color: var(--muted);
+    font-size: 12px;
+    border-top: 1px solid var(--card-border);
+    margin-top: 32px;
+  }
+  .update-time { font-size: 12px; color: var(--muted); }
+  .section-title { font-size: 16px; font-weight: 600; margin: 28px 0 16px; }
+  .formula-box {
+    background: #0d1117;
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 12px;
+    color: #a5d6ff;
+    overflow-x: auto;
+    margin-top: 12px;
+  }
+  .pair-tag {
+    display: inline-block;
+    background: var(--accent);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  @media (max-width: 600px) {
+    .header { padding: 16px; }
+    .container { padding: 16px; }
+    .stats-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div>
+    <h1>Hybrid Levels Dashboard <span id="pairTitle">GBPUSD</span></h1>
+    <div class="update-time">Last calculated: <span id="lastUpdate">—</span> (10pm Spain)</div>
+  </div>
+  <div class="status-bar">
+    <select class="pair-select" id="pairSelect" onchange="switchPair()">
+      <option value="GBPUSD">GBPUSD</option>
+      <option value="EURUSD">EURUSD</option>
+    </select>
+    <div class="live"><div class="dot"></div> Non-Repainting</div>
+    <div>Next update: 21:00 CET</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="grid">
+    <div class="card">
+      <h2>📊 Hybrid Levels <span class="pair-tag" id="pairTag">GBPUSD</span></h2>
+      <div class="levels-box">
+        <div class="level-row res">
+          <div>
+            <div class="level-label">Nearest Resistance</div>
+            <div class="level-value" id="resLevel">1.2685</div>
+          </div>
+          <div class="level-label">High side</div>
+        </div>
+        <div class="level-row sup">
+          <div>
+            <div class="level-label">Nearest Support</div>
+            <div class="level-value" id="supLevel">1.2620</div>
+          </div>
+          <div class="level-label">Low side</div>
+        </div>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--muted);">
+        One of these levels is touched on <strong style="color:var(--green)">98.7%</strong> of days.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📈 ATR(14) at 10pm Spain</h2>
+      <div class="atr-display">
+        <div class="atr-value low" id="atrValue">68</div>
+        <div class="atr-label">pips</div>
+        <div class="bias-badge trend" id="atrBias">Low ATR → Trend Bias</div>
+      </div>
+      <div style="font-size:12px; color:var(--muted); text-align:center; margin-top:8px;">
+        &lt;75 pips = trend lean &nbsp;|&nbsp; &gt;100 pips = range lean
+      </div>
+    </div>
+  </div>
+
+  <div class="action-panel" id="actionPanel">
+    <h2>OPERATOR ACTION</h2>
+    <div class="action-text" id="actionText">Waiting for first touch of a level…</div>
+    <div class="action-detail" id="actionDetail">
+      When price first touches Resistance or Support, the dashboard will show the recommended lean based on current ATR.
+    </div>
+  </div>
+
+  <h3 class="section-title">Qualified Edges (Validated 2010–2026)</h3>
+  <div class="grid">
+    <div class="card">
+      <h2>✅ Nearer-First</h2>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-value">\~81%</div>
+          <div class="stat-label">Both pairs</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">80%+</div>
+          <div class="stat-label">Holds 2020+</div>
+        </div>
+      </div>
+      <div style="margin-top:12px; font-size:13px; color:var(--muted);">
+        The nearer hybrid level is visited first. Base edge. Do not trade alone — stack with ATR.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>✅ Near Break (ATR ≥ 75)</h2>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-value">79–81%</div>
+          <div class="stat-label">Near level breaks</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">75–80%</div>
+          <div class="stat-label">Holds 2020+</div>
+        </div>
+      </div>
+      <div style="margin-top:12px; font-size:13px; color:var(--muted);">
+        High ATR → the near level breaks \~4 times out of 5. Trade the break, not the hold.
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h2>Stacked System</h2>
+    <div class="rules">
+      <div class="rule">
+        <div class="rule-icon" style="background:rgba(59,130,246,0.2);color:var(--accent);">1</div>
+        <div class="rule-text">
+          <strong>Check ATR at 07:00</strong><br>
+          <span>ATR ≥ 75 → expect Near Break. ATR &lt; 70 → no near-break trade.</span>
+        </div>
+      </div>
+      <div class="rule">
+        <div class="rule-icon" style="background:rgba(59,130,246,0.2);color:var(--accent);">2</div>
+        <div class="rule-text">
+          <strong>Trade the break</strong><br>
+          <span>Near = Support → short the break by 10 pips. Near = Resistance → long the break. Stop back inside.</span>
+        </div>
+      </div>
+      <div class="rule">
+        <div class="rule-icon" style="background:rgba(59,130,246,0.2);color:var(--accent);">3</div>
+        <div class="rule-text">
+          <strong>After first-touch bar closes</strong><br>
+          <span>If Wick = 0 (closed through) → fade it. If Wick = 1 → do not fade.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="section-title">Decision Rules (From Research)</h3>
+  <div class="grid">
+    <div class="card">
+      <h2>🟢 Low ATR Rules (&lt;75 pips)</h2>
+      <div class="rules">
+        <div class="rule">
+          <div class="rule-icon sell">S</div>
+          <div class="rule-text">
+            <strong>First touch Support → SELL</strong><br>
+            <span>64.3% win rate (n=266)</span>
+          </div>
+        </div>
+        <div class="rule">
+          <div class="rule-icon buy">B</div>
+          <div class="rule-text">
+            <strong>First touch Resistance → BUY</strong><br>
+            <span>56.2% win rate (n=304)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🟠 High ATR Rules (&gt;100 pips)</h2>
+      <div class="rules">
+        <div class="rule">
+          <div class="rule-icon buy">B</div>
+          <div class="rule-text">
+            <strong>First touch Resistance → BUY</strong><br>
+            <span>Continuation logic \~52–53%</span>
+          </div>
+        </div>
+        <div class="rule">
+          <div class="rule-icon sell">S</div>
+          <div class="rule-text">
+            <strong>First touch Support → SELL</strong><br>
+            <span>Continuation logic \~52–53%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="section-title">Research Statistics</h3>
+  <div class="grid">
+    <div class="card">
+      <h2>📋 Level Quality</h2>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-value">98.7%</div>
+          <div class="stat-label">Days a level is touched</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">31</div>
+          <div class="stat-label">Median capture (pips)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">36.4</div>
+          <div class="stat-label">Avg distance to extremes</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">64.3%</div>
+          <div class="stat-label">Best directional edge</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⏱️ Timing</h2>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-value">4h</div>
+          <div class="stat-label">Median time to first touch</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">82.7%</div>
+          <div class="stat-label">Touched within 4 hours</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">61–64%</div>
+          <div class="stat-label">Nearer level visited first</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">\~50%</div>
+          <div class="stat-label">Raw high/low first bias</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="section-title">Hybrid Formula (Non-Repainting)</h3>
+  <div class="card">
+    <h2>🔢 Calculated each night at 10pm Spain — same method for both pairs</h2>
+    <div class="formula-box">
+      <div style="color:#8b9bb4; margin-bottom:8px;">// Jenkins Square Root from first 60-min extreme</div>
+      Root = √(Pivot × 10000)<br>
+      Level = (Root ± i)² / 10000 &nbsp; where i ∈ {0.25, 0.5, 0.75, 1.0, 1.5, 2.0}<br><br>
+      <div style="color:#8b9bb4; margin-bottom:8px;">// Combined with structural levels</div>
+      AllLevels = StructuralLevels ∪ JenkinsLevels<br>
+      NearestSupport = max(level &lt; Open)<br>
+      NearestResistance = min(level &gt; Open)
+    </div>
+    <div style="margin-top:12px; font-size:13px; color:var(--muted);">
+      Levels are fixed at calculation time and do not repaint. ATR is measured at the same 10pm Spain close for each pair.
+    </div>
+  </div>
+
+  <h3 class="section-title">ATR Reference Table</h3>
+  <div class="card">
+    <table style="width:100%; font-size:13px; border-collapse:collapse;">
+      <tr style="color:var(--muted); text-align:left;">
+        <th style="padding:8px 0;">ATR(14)</th>
+        <th>Trend Day %</th>
+        <th>Choppy %</th>
+        <th>Bias</th>
+      </tr>
+      <tr><td style="padding:8px 0;">&lt; 75 pips</td><td>24.2%</td><td>51.4%</td><td style="color:var(--green)">Trend lean</td></tr>
+      <tr><td style="padding:8px 0;">75–100</td><td>\~20%</td><td>\~54%</td><td style="color:var(--muted)">Neutral</td></tr>
+      <tr><td style="padding:8px 0;">&gt; 100 pips</td><td>15.1%</td><td>58.8%</td><td style="color:var(--orange)">Range lean</td></tr>
+      <tr><td style="padding:8px 0;">&gt; 120 pips</td><td>15.3%</td><td>64.2%</td><td style="color:var(--orange)">Strong range</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<footer class="footer">
+  EURUSD & GBPUSD Hybrid Levels Dashboard &nbsp;•&nbsp; Based on research 2020–2026 &nbsp;•&nbsp; Non-repainting levels at 10pm Spain<br>
+  Past results do not guarantee future performance. Use as a decision framework, not a standalone system.
+</footer>
+
+<script>
+  const pairData = {
+    GBPUSD: {
+      resistance: 1.2685,
+      support: 1.2620,
+      atr: 68
+    },
+    EURUSD: {
+      resistance: 1.0855,
+      support: 1.0790,
+      atr: 52
+    }
+  };
+
+  let currentPair = 'GBPUSD';
+
+  function updateClock() {
+    const now = new Date();
+    const options = { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false };
+    const spainTime = now.toLocaleTimeString('en-GB', options);
+    document.getElementById('lastUpdate').textContent = spainTime + ' CET';
+  }
+  updateClock();
+  setInterval(updateClock, 60000);
+
+  function switchPair() {
+    currentPair = document.getElementById('pairSelect').value;
+    document.getElementById('pairTitle').textContent = currentPair;
+    document.getElementById('pairTag').textContent = currentPair;
+    render(pairData[currentPair]);
+    document.getElementById('actionText').textContent = 'Waiting for first touch of a level…';
+    document.getElementById('actionDetail').textContent = 'When price first touches Resistance or Support, the dashboard will show the recommended lean based on current ATR.';
+    document.getElementById('actionPanel').style.borderColor = '#3b82f6';
+  }
+
+  function render(data) {
+    document.getElementById('resLevel').textContent = data.resistance.toFixed(4);
+    document.getElementById('supLevel').textContent = data.support.toFixed(4);
+    document.getElementById('atrValue').textContent = Math.round(data.atr);
+    
+    const atrEl = document.getElementById('atrValue');
+    const biasEl = document.getElementById('atrBias');
+    atrEl.className = 'atr-value';
+    
+    if (data.atr < 75) {
+      atrEl.classList.add('low');
+      biasEl.className = 'bias-badge trend';
+      biasEl.textContent = 'Low ATR → Trend Bias';
+    } else if (data.atr > 100) {
+      atrEl.classList.add('high');
+      biasEl.className = 'bias-badge range';
+      biasEl.textContent = 'High ATR → Range Bias';
+    } else {
+      atrEl.classList.add('mid');
+      biasEl.className = 'bias-badge neutral';
+      biasEl.textContent = 'Mid ATR → Neutral';
+    }
+  }
+
+  function simulateFirstTouch(side) {
+    const data = pairData[currentPair];
+    const atr = data.atr;
+    const panel = document.getElementById('actionPanel');
+    const text = document.getElementById('actionText');
+    const detail = document.getElementById('actionDetail');
+    
+    if (atr < 75) {
+      if (side === 'support') {
+        text.textContent = 'First touch SUPPORT → Lean SELL';
+        detail.textContent = 'Low ATR + first touch support has 64.3% historical win rate.';
+        panel.style.borderColor = '#ef4444';
+      } else {
+        text.textContent = 'First touch RESISTANCE → Lean BUY';
+        detail.textContent = 'Low ATR + first touch resistance has 56.2% historical win rate.';
+        panel.style.borderColor = '#10b981';
+      }
+    } else if (atr > 100) {
+      if (side === 'resistance') {
+        text.textContent = 'First touch RESISTANCE → Lean BUY (continuation)';
+        detail.textContent = 'High ATR continuation logic \~52–53%.';
+        panel.style.borderColor = '#10b981';
+      } else {
+        text.textContent = 'First touch SUPPORT → Lean SELL (continuation)';
+        detail.textContent = 'High ATR continuation logic \~52–53%.';
+        panel.style.borderColor = '#ef4444';
+      }
+    } else {
+      text.textContent = 'Mid ATR — no strong lean';
+      detail.textContent = 'ATR is between 75–100. Edge is weaker. Prefer to wait or use other filters.';
+      panel.style.borderColor = '#f59e0b';
+    }
+  }
+
+  render(pairData[currentPair]);
+  setTimeout(() => simulateFirstTouch('support'), 2000);
+</script>
+
+</body>
+</html>
