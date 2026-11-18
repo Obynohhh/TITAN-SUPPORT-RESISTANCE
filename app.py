@@ -1,12 +1,14 @@
 """
 EURUSD & GBPUSD Hybrid Levels — Streamlit App
+Live prices from Twelve Data API.
 Imports original hybrid calculation and event scanner.
 Does not reimplement any trading mathematics.
-Deployable on Streamlit Cloud.
 """
 
 import streamlit as st
-from datetime import datetime
+import requests
+from datetime import datetime, timedelta
+import math
 
 # Import original functions — no reimplementation of mathematics
 from HYBRID_LEVELS_CODE import (
@@ -26,74 +28,142 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Session state for inputs
+# Twelve Data API
 # ---------------------------------------------------------------------------
-if "inputs" not in st.session_state:
-    st.session_state.inputs = {
-        "GBPUSD": {
-            "current_price": 1.2635,
-            "atr": 68.0,
-            "first_hour_high": 1.2650,
-            "first_hour_low": 1.2610,
-            "first_hour_open": 1.2625,
-            "asia_high": 1.2660,
-            "asia_low": 1.2605,
-            "prev_day_high": 1.2680,
-            "prev_day_low": 1.2590,
-            "first_touch_side": None,
-            "wick": None,
-        },
-        "EURUSD": {
-            "current_price": 1.0855,
-            "atr": 52.0,
-            "first_hour_high": 1.0870,
-            "first_hour_low": 1.0835,
-            "first_hour_open": 1.0845,
-            "asia_high": 1.0880,
-            "asia_low": 1.0830,
-            "prev_day_high": 1.0900,
-            "prev_day_low": 1.0820,
-            "first_touch_side": None,
-            "wick": None,
-        },
+TWELVE_DATA_KEY = st.secrets.get("TWELVE_DATA_API_KEY", "")
+
+def fetch_twelve_data(symbol: str, interval: str = "1h", outputsize: int = 50):
+    """Fetch OHLC from Twelve Data."""
+    if not TWELVE_DATA_KEY:
+        return None
+    url = "https://api.twelvedata.com/time_series"
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "outputsize": outputsize,
+        "apikey": TWELVE_DATA_KEY,
+    }
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+        if data.get("status") == "error":
+            return None
+        return data.get("values", [])
+    except Exception:
+        return None
+
+
+def fetch_quote(symbol: str):
+    """Fetch current price from Twelve Data."""
+    if not TWELVE_DATA_KEY:
+        return None
+    url = "https://api.twelvedata.com/price"
+    params = {"symbol": symbol, "apikey": TWELVE_DATA_KEY}
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+        return float(data.get("price", 0)) if data.get("price") else None
+    except Exception:
+        return None
+
+
+def compute_atr(values, period=14):
+    """Simple ATR from Twelve Data OHLC list (most recent first)."""
+    if not values or len(values) < period + 1:
+        return 80.0
+    trs = []
+    for i in range(period):
+        high = float(values[i]["high"])
+        low = float(values[i]["low"])
+        prev_close = float(values[i + 1]["close"])
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        trs.append(tr)
+    return sum(trs) / len(trs) * 10000  # pips
+
+
+def extract_session_levels(values):
+    """Extract first-hour and Asia extremes from 1H bars (most recent first)."""
+    if not values:
+        return {}
+    # Assume values are ordered newest first
+    # First hour of current day ≈ most recent bars before ~07:00
+    # Simplified: use last 7 bars for Asia, last 1-2 for first hour
+    asia_bars = values[:7] if len(values) >= 7 else values
+    first_hour = values[0] if values else None
+
+    asia_high = max(float(b["high"]) for b in asia_bars) if asia_bars else 0
+    asia_low = min(float(b["low"]) for b in asia_bars) if asia_bars else 0
+    fh_high = float(first_hour["high"]) if first_hour else 0
+    fh_low = float(first_hour["low"]) if first_hour else 0
+    fh_open = float(first_hour["open"]) if first_hour else 0
+
+    prev_high = float(values[7]["high"]) if len(values) > 7 else None
+    prev_low = float(values[7]["low"]) if len(values) > 7 else None
+
+    return {
+        "first_hour_high": fh_high,
+        "first_hour_low": fh_low,
+        "first_hour_open": fh_open,
+        "asia_high": asia_high,
+        "asia_low": asia_low,
+        "prev_day_high": prev_high,
+        "prev_day_low": prev_low,
     }
 
-# ---------------------------------------------------------------------------
-# Helper — call original modules only
-# ---------------------------------------------------------------------------
-def compute(pair: str) -> dict:
-    inp = st.session_state.inputs[pair]
 
+def get_live_inputs(pair: str) -> dict:
+    """Fetch live data and build inputs for the original functions."""
+    symbol = pair  # EURUSD, GBPUSD
+    quote = fetch_quote(symbol)
+    values = fetch_twelve_data(symbol, interval="1h", outputsize=30)
+
+    price = quote if quote else 1.0
+    atr = compute_atr(values) if values else 80.0
+    session = extract_session_levels(values) if values else {}
+
+    return {
+        "current_price": price,
+        "atr": atr,
+        "first_hour_high": session.get("first_hour_high", price),
+        "first_hour_low": session.get("first_hour_low", price),
+        "first_hour_open": session.get("first_hour_open", price),
+        "asia_high": session.get("asia_high", price),
+        "asia_low": session.get("asia_low", price),
+        "prev_day_high": session.get("prev_day_high"),
+        "prev_day_low": session.get("prev_day_low"),
+        "first_touch_side": None,
+        "wick": None,
+    }
+
+
+def compute(pair: str, inputs: dict) -> dict:
+    """Call original modules only."""
     levels = build_hybrid_levels(
-        first_hour_high=inp["first_hour_high"],
-        first_hour_low=inp["first_hour_low"],
-        first_hour_open=inp["first_hour_open"],
-        asia_high=inp["asia_high"],
-        asia_low=inp["asia_low"],
-        prev_day_high=inp["prev_day_high"],
-        prev_day_low=inp["prev_day_low"],
-        current_price=inp["current_price"],
+        first_hour_high=inputs["first_hour_high"],
+        first_hour_low=inputs["first_hour_low"],
+        first_hour_open=inputs["first_hour_open"],
+        asia_high=inputs["asia_high"],
+        asia_low=inputs["asia_low"],
+        prev_day_high=inputs["prev_day_high"],
+        prev_day_low=inputs["prev_day_low"],
+        current_price=inputs["current_price"],
     )
-
-    near, far, nearer_side = get_near_far(levels, inp["current_price"])
-
-    edges = qualified_edges(atr=inp["atr"], nearer_side=nearer_side)
-
+    near, far, nearer_side = get_near_far(levels, inputs["current_price"])
+    edges = qualified_edges(atr=inputs["atr"], nearer_side=nearer_side)
     scan = scan_events(
         pair=pair,
-        current_price=inp["current_price"],
-        atr=inp["atr"],
-        first_hour_high=inp["first_hour_high"],
-        first_hour_low=inp["first_hour_low"],
-        first_hour_open=inp["first_hour_open"],
-        asia_high=inp["asia_high"],
-        asia_low=inp["asia_low"],
-        prev_day_high=inp["prev_day_high"],
-        prev_day_low=inp["prev_day_low"],
-        first_touch_side=inp["first_touch_side"],
-        wick=inp["wick"],
+        current_price=inputs["current_price"],
+        atr=inputs["atr"],
+        first_hour_high=inputs["first_hour_high"],
+        first_hour_low=inputs["first_hour_low"],
+        first_hour_open=inputs["first_hour_open"],
+        asia_high=inputs["asia_high"],
+        asia_low=inputs["asia_low"],
+        prev_day_high=inputs["prev_day_high"],
+        prev_day_low=inputs["prev_day_low"],
+        first_touch_side=inputs["first_touch_side"],
+        wick=inputs["wick"],
     )
-
     return {
         "levels": levels,
         "near_level": near,
@@ -101,59 +171,70 @@ def compute(pair: str) -> dict:
         "nearer_side": nearer_side,
         "edges": edges,
         "scan": scan,
-        "inputs": inp,
+        "inputs": inputs,
     }
 
+
 # ---------------------------------------------------------------------------
-# Sidebar — pair + inputs
+# Sidebar
 # ---------------------------------------------------------------------------
 st.sidebar.title("Settings")
 pair = st.sidebar.selectbox("Pair", ["GBPUSD", "EURUSD"])
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Market Inputs")
-
-inp = st.session_state.inputs[pair]
-
-inp["current_price"] = st.sidebar.number_input(
-    "Current Price", value=inp["current_price"], format="%.4f", step=0.0001
-)
-inp["atr"] = st.sidebar.number_input("ATR(14) pips", value=float(inp["atr"]), step=1.0)
+if st.sidebar.button("Refresh Live Data"):
+    st.session_state["force_refresh"] = True
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("First-Touch Confirmation")
-
-touch_options = ["None", "sup", "res"]
-touch_idx = 0 if inp["first_touch_side"] is None else touch_options.index(inp["first_touch_side"])
-touch_sel = st.sidebar.selectbox("First Touch Side", touch_options, index=touch_idx)
-inp["first_touch_side"] = None if touch_sel == "None" else touch_sel
-
-wick_options = ["None", "0", "1"]
-wick_idx = 0 if inp["wick"] is None else wick_options.index(str(inp["wick"]))
-wick_sel = st.sidebar.selectbox("Wick", wick_options, index=wick_idx)
-inp["wick"] = None if wick_sel == "None" else int(wick_sel)
-
-st.session_state.inputs[pair] = inp
+st.sidebar.caption("Live data from Twelve Data API")
+if not TWELVE_DATA_KEY:
+    st.sidebar.warning("Add TWELVE_DATA_API_KEY to Streamlit secrets")
 
 # ---------------------------------------------------------------------------
-# Main dashboard
+# Main
 # ---------------------------------------------------------------------------
-st.title(f"Hybrid Levels Dashboard — {pair}")
-st.caption("Non-repainting levels • Original calculation functions • 10pm Spain / 07:00")
+st.title("Hybrid Levels Dashboard")
+st.caption("EURUSD & GBPUSD • Live from Twelve Data • Original calculation functions")
 
-result = compute(pair)
+# Fetch live inputs
+with st.spinner(f"Fetching {pair} from Twelve Data..."):
+    live_inputs = get_live_inputs(pair)
 
-# ----- Calculated Levels -----
-st.subheader("Calculated Levels")
+result = compute(pair, live_inputs)
+
+# Display both pairs summary
+st.subheader("Both Pairs")
+cols = st.columns(2)
+for i, p in enumerate(["GBPUSD", "EURUSD"]):
+    with cols[i]:
+        p_inputs = get_live_inputs(p)
+        p_result = compute(p, p_inputs)
+        st.metric(
+            p,
+            f"{p_inputs['current_price']:.4f}",
+            delta=f"ATR {p_inputs['atr']:.0f}",
+        )
+        st.caption(f"Near: {p_result['near_level']:.4f}" if p_result["near_level"] else "—")
+        st.caption(f"Far: {p_result['far_level']:.4f}" if p_result["far_level"] else "—")
+
+st.markdown("---")
+
+# Selected pair detail
+st.subheader(f"{pair} Detail")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Price", f"{live_inputs['current_price']:.4f}")
+with col2:
+    st.metric("ATR(14)", f"{live_inputs['atr']:.1f} pips")
+with col3:
+    st.metric("Nearer Side", result["nearer_side"] or "—")
+
 col1, col2 = st.columns(2)
 with col1:
     st.metric("Nearest Support", f"{result['near_level']:.4f}" if result["near_level"] else "—")
 with col2:
     st.metric("Nearest Resistance", f"{result['far_level']:.4f}" if result["far_level"] else "—")
 
-st.info(f"Nearer side: **{result['nearer_side'] or '—'}**")
-
-# ----- Expected Edges -----
+# Expected Edges
 st.subheader("Expected Edges")
 for ev in result["scan"].get("active_events", []):
     status = ev.get("status", "")
@@ -164,17 +245,7 @@ for ev in result["scan"].get("active_events", []):
     else:
         st.warning(f"**{ev['name']}** — {ev['note']}")
 
-# ----- Confirmed First-Touch -----
-st.subheader("Confirmed First-Touch Events")
-if inp["first_touch_side"] and inp["wick"] is not None:
-    st.success(
-        f"**CONFIRMED** — First touch {inp['first_touch_side'].upper()} "
-        f"with Wick = {inp['wick']}"
-    )
-else:
-    st.info("No first-touch confirmed yet. Set First Touch Side and Wick in the sidebar.")
-
-# ----- Actions -----
+# Actions
 st.subheader("Actions")
 actions = result["scan"].get("actions", [])
 if actions:
@@ -183,10 +254,9 @@ if actions:
 else:
     st.caption("No actions at this time.")
 
-# ----- Footer -----
 st.markdown("---")
 st.caption(
-    f"Calculated at {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC • "
-    "Uses original HYBRID_LEVELS_CODE and EVENTS_SCANNER modules • "
-    "Past results do not guarantee future performance."
+    f"Updated {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC • "
+    "Uses original HYBRID_LEVELS_CODE and EVENTS_SCANNER • "
+    "Live prices from Twelve Data"
 )
