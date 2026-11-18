@@ -193,10 +193,9 @@ def compute(pair: str, inputs: dict) -> dict:
 # Sidebar
 # ---------------------------------------------------------------------------
 st.sidebar.title("Settings")
-pair = st.sidebar.selectbox("Pair", ["GBPUSD", "EURUSD"])
 
 if st.sidebar.button("Refresh Live Data"):
-    st.session_state["force_refresh"] = True
+    st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Live data from Twelve Data API")
@@ -209,64 +208,99 @@ if not TWELVE_DATA_KEY:
 st.title("Hybrid Levels Dashboard")
 st.caption("EURUSD & GBPUSD • Live from Twelve Data • Original calculation functions")
 
-# Fetch live inputs
-with st.spinner(f"Fetching {pair} from Twelve Data..."):
-    live_inputs = get_live_inputs(pair)
+# Fetch both pairs once
+with st.spinner("Fetching live data for EURUSD and GBPUSD..."):
+    eur_inputs = get_live_inputs("EURUSD")
+    gbp_inputs = get_live_inputs("GBPUSD")
 
-result = compute(pair, live_inputs)
+eur_result = compute("EURUSD", eur_inputs)
+gbp_result = compute("GBPUSD", gbp_inputs)
 
-# Display both pairs summary
+# ---------------------------------------------------------------------------
+# Combined section
+# ---------------------------------------------------------------------------
 st.subheader("Both Pairs")
-cols = st.columns(2)
-for i, p in enumerate(["GBPUSD", "EURUSD"]):
-    with cols[i]:
-        p_inputs = get_live_inputs(p)
-        p_result = compute(p, p_inputs)
-        st.metric(
-            p,
-            f"{p_inputs['current_price']:.4f}",
-            delta=f"ATR {p_inputs['atr']:.0f}",
-        )
-        st.caption(f"Near: {p_result['near_level']:.4f}" if p_result["near_level"] else "—")
-        st.caption(f"Far: {p_result['far_level']:.4f}" if p_result["far_level"] else "—")
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("EURUSD", f"{eur_inputs['current_price']:.4f}", delta=f"ATR {eur_inputs['atr']:.0f}")
+    st.write(f"Support: {eur_result['near_level']:.4f}" if eur_result["near_level"] else "Support: —")
+    st.write(f"Resistance: {eur_result['far_level']:.4f}" if eur_result["far_level"] else "Resistance: —")
+with col2:
+    st.metric("GBPUSD", f"{gbp_inputs['current_price']:.4f}", delta=f"ATR {gbp_inputs['atr']:.0f}")
+    st.write(f"Support: {gbp_result['near_level']:.4f}" if gbp_result["near_level"] else "Support: —")
+    st.write(f"Resistance: {gbp_result['far_level']:.4f}" if gbp_result["far_level"] else "Resistance: —")
 
 st.markdown("---")
 
-# Selected pair detail
-st.subheader(f"{pair} Detail")
+# ---------------------------------------------------------------------------
+# EURUSD section
+# ---------------------------------------------------------------------------
+st.subheader("EURUSD")
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.metric("Price", f"{live_inputs['current_price']:.4f}")
+    st.metric("Price", f"{eur_inputs['current_price']:.4f}")
 with col2:
-    st.metric("ATR(14)", f"{live_inputs['atr']:.1f} pips")
+    st.metric("ATR(14)", f"{eur_inputs['atr']:.1f} pips")
 with col3:
-    st.metric("Nearer Side", result["nearer_side"] or "—")
+    st.metric("Nearer Side", eur_result["nearer_side"] or "—")
 
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("Nearest Support", f"{result['near_level']:.4f}" if result["near_level"] else "—")
+    st.metric("Nearest Support", f"{eur_result['near_level']:.4f}" if eur_result["near_level"] else "—")
 with col2:
-    st.metric("Nearest Resistance", f"{result['far_level']:.4f}" if result["far_level"] else "—")
+    st.metric("Nearest Resistance", f"{eur_result['far_level']:.4f}" if eur_result["far_level"] else "—")
 
-# Expected Edges
-st.subheader("Expected Edges")
-for ev in result["scan"].get("active_events", []):
+st.markdown("**Expected Edges**")
+for ev in eur_result["scan"].get("active_events", []):
     status = ev.get("status", "")
     if status == "ACTIVE":
-        st.success(f"**{ev['name']}** — {ev['note']} ({ev['rate']})")
+        st.success(f"{ev['name']} — {ev['note']} ({ev['rate']})")
     elif status == "EXPECTED":
-        st.info(f"**{ev['name']}** — {ev['note']} ({ev['rate']})")
+        st.info(f"{ev['name']} — {ev['note']} ({ev['rate']})")
     else:
-        st.warning(f"**{ev['name']}** — {ev['note']}")
+        st.warning(f"{ev['name']} — {ev['note']}")
 
-# Actions
-st.subheader("Actions")
-actions = result["scan"].get("actions", [])
+actions = eur_result["scan"].get("actions", [])
 if actions:
+    st.markdown("**Actions**")
     for a in actions:
         st.write(f"- {a}")
-else:
-    st.caption("No actions at this time.")
+
+st.markdown("---")
+
+# ---------------------------------------------------------------------------
+# GBPUSD section
+# ---------------------------------------------------------------------------
+st.subheader("GBPUSD")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Price", f"{gbp_inputs['current_price']:.4f}")
+with col2:
+    st.metric("ATR(14)", f"{gbp_inputs['atr']:.1f} pips")
+with col3:
+    st.metric("Nearer Side", gbp_result["nearer_side"] or "—")
+
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("Nearest Support", f"{gbp_result['near_level']:.4f}" if gbp_result["near_level"] else "—")
+with col2:
+    st.metric("Nearest Resistance", f"{gbp_result['far_level']:.4f}" if gbp_result["far_level"] else "—")
+
+st.markdown("**Expected Edges**")
+for ev in gbp_result["scan"].get("active_events", []):
+    status = ev.get("status", "")
+    if status == "ACTIVE":
+        st.success(f"{ev['name']} — {ev['note']} ({ev['rate']})")
+    elif status == "EXPECTED":
+        st.info(f"{ev['name']} — {ev['note']} ({ev['rate']})")
+    else:
+        st.warning(f"{ev['name']} — {ev['note']}")
+
+actions = gbp_result["scan"].get("actions", [])
+if actions:
+    st.markdown("**Actions**")
+    for a in actions:
+        st.write(f"- {a}")
 
 st.markdown("---")
 st.caption(
