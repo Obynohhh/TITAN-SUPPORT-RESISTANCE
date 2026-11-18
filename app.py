@@ -33,12 +33,15 @@ st.set_page_config(
 TWELVE_DATA_KEY = st.secrets.get("TWELVE_DATA_API_KEY", "")
 
 def fetch_twelve_data(symbol: str, interval: str = "1h", outputsize: int = 50):
-    """Fetch OHLC from Twelve Data."""
+    """Fetch OHLC from Twelve Data. Symbol must be EUR/USD format."""
     if not TWELVE_DATA_KEY:
+        st.sidebar.error("TWELVE_DATA_API_KEY not found in secrets")
         return None
+    # Twelve Data expects EUR/USD not EURUSD
+    td_symbol = symbol[:3] + "/" + symbol[3:] if len(symbol) == 6 else symbol
     url = "https://api.twelvedata.com/time_series"
     params = {
-        "symbol": symbol,
+        "symbol": td_symbol,
         "interval": interval,
         "outputsize": outputsize,
         "apikey": TWELVE_DATA_KEY,
@@ -47,9 +50,11 @@ def fetch_twelve_data(symbol: str, interval: str = "1h", outputsize: int = 50):
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
         if data.get("status") == "error":
+            st.sidebar.error(f"Twelve Data error: {data.get('message', 'unknown')}")
             return None
         return data.get("values", [])
-    except Exception:
+    except Exception as e:
+        st.sidebar.error(f"Request failed: {e}")
         return None
 
 
@@ -57,13 +62,18 @@ def fetch_quote(symbol: str):
     """Fetch current price from Twelve Data."""
     if not TWELVE_DATA_KEY:
         return None
+    td_symbol = symbol[:3] + "/" + symbol[3:] if len(symbol) == 6 else symbol
     url = "https://api.twelvedata.com/price"
-    params = {"symbol": symbol, "apikey": TWELVE_DATA_KEY}
+    params = {"symbol": td_symbol, "apikey": TWELVE_DATA_KEY}
     try:
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
+        if data.get("status") == "error":
+            st.sidebar.error(f"Quote error: {data.get('message', 'unknown')}")
+            return None
         return float(data.get("price", 0)) if data.get("price") else None
-    except Exception:
+    except Exception as e:
+        st.sidebar.error(f"Quote request failed: {e}")
         return None
 
 
@@ -113,12 +123,16 @@ def extract_session_levels(values):
 
 def get_live_inputs(pair: str) -> dict:
     """Fetch live data and build inputs for the original functions."""
-    symbol = pair  # EURUSD, GBPUSD
-    quote = fetch_quote(symbol)
-    values = fetch_twelve_data(symbol, interval="1h", outputsize=30)
+    quote = fetch_quote(pair)
+    values = fetch_twelve_data(pair, interval="1h", outputsize=30)
 
-    price = quote if quote else 1.0
-    atr = compute_atr(values) if values else 80.0
+    if quote is None:
+        st.error(f"Could not fetch live price for {pair}. Check API key and symbol.")
+        price = 0.0
+    else:
+        price = quote
+
+    atr = compute_atr(values) if values else 0.0
     session = extract_session_levels(values) if values else {}
 
     return {
