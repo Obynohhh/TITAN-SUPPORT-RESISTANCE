@@ -303,6 +303,55 @@ if actions:
         st.write(f"- {a}")
 
 st.markdown("---")
+
+# ---------------------------------------------------------------------------
+# Operator Reader — from 4 AM Spain time
+# ---------------------------------------------------------------------------
+st.subheader("Operator Reader — From 4 AM Spain")
+
+def operator_guidance(pair_name, result, inputs):
+    nearer = result.get("nearer_side", "")
+    atr = inputs.get("atr", 0)
+    near_level = result.get("near_level")
+    far_level = result.get("far_level")
+
+    st.markdown(f"### {pair_name}")
+
+    if not nearer:
+        st.warning("Levels not ready yet.")
+        return
+
+    # Nearer-first expectation
+    if nearer == "sup":
+        st.info(f"**Nearer extreme is SUPPORT** at {near_level:.4f}. Expect price to visit this side first (~81% historically).")
+    else:
+        st.info(f"**Nearer extreme is RESISTANCE** at {far_level:.4f}. Expect price to visit this side first (~81% historically).")
+
+    # ATR-based action from 4 AM
+    if atr >= 75:
+        st.success(f"**High ATR ({atr:.0f})** — Near Break expected (79–81%).")
+        if nearer == "sup":
+            st.write("→ From 4 AM: prepare to **SHORT the break of Support** by 10 pips. Stop back inside.")
+        else:
+            st.write("→ From 4 AM: prepare to **LONG the break of Resistance** by 10 pips. Stop back inside.")
+    elif atr < 70:
+        st.warning(f"**Low ATR ({atr:.0f})** — No Near-Break trade. Prefer fade on first touch.")
+        if nearer == "sup":
+            st.write("→ From 4 AM: if Support is touched first and closes through (Wick=0), consider **BUY the fade**.")
+        else:
+            st.write("→ From 4 AM: if Resistance is touched first and closes through (Wick=0), consider **SELL the fade**.")
+    else:
+        st.info(f"**Mid ATR ({atr:.0f})** — Edge is weaker. Wait for clearer first-touch confirmation.")
+
+    st.caption("Guidance active from 4 AM Spain. Levels are non-repainting once calculated.")
+
+col1, col2 = st.columns(2)
+with col1:
+    operator_guidance("EURUSD", eur_result, eur_inputs)
+with col2:
+    operator_guidance("GBPUSD", gbp_result, gbp_inputs)
+
+st.markdown("---")
 st.caption(
     f"Updated {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC • "
     "Uses original HYBRID_LEVELS_CODE and EVENTS_SCANNER • "
